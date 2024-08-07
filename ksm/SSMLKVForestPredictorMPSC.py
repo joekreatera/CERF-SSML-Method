@@ -27,7 +27,20 @@ from time import time
 
 from multiprocessing import Manager
 import multiprocessing as mp 
-
+LEFT_SIMPLE_SUM = 0
+RIGHT_SIMPLE_SUM = 1
+LEFT_SQUARED_SUM = 2
+RIGHT_SQUARED_SUM = 3
+LEFT_TOTAL = 4
+RIGHT_TOTAL = 5
+TOTAL_VARIANCE = 6
+LEFT_VARIANCE = 7
+RIGHT_VARIANCE = 8
+ITERATION_VALUE = 9
+BEST_ITERATION_VALUE = 10
+BEST_POSITION_INDEX = 11
+BEST_ORIGINAL_INDEX = 12
+SAME_VALUE_COLUMN = 13
 
 
 class CategoricalDictionary():
@@ -110,7 +123,7 @@ class SSMLKVForestPredictor(BaseEstimator, ClassifierMixin):
     
     def __init__(self, confidence=0.2, leaf_relative_instance_quantity=0.05, unlabeledIndex=None, rec=5000, bfr = './', tag='vrssml', complete_ss = True,  
     trees_quantity = 1 ,  is_multiclass = False , do_random_attribute_selection = False,
-    gamma = 10, hyper_params_dict = None, do_ranking_split = False, p=[.5,0,0,.5], q=[1,0,0], use_complex_model=False, njobs=None):
+    gamma = 10, hyper_params_dict = None, do_ranking_split = False, p=[1,1,1,1,1,1,1], use_complex_model=False, njobs=None):
         super().__init__()
         self.njobs = njobs
         self.confidence = confidence
@@ -254,12 +267,16 @@ class SSMLKVForestPredictor(BaseEstimator, ClassifierMixin):
         if(type(distance_matrix_df) is pd.DataFrame):
             distance_matrix_df = distance_matrix_df.to_numpy()
         # 0 is the same, 1 is the farthest
-        half_matrix = np.tril(distance_matrix_df)
         n = distance_matrix_df.shape[0] - 1 # n its the amount of elements, n-1 would take out the distances of one to itself
         elements = n*(n+1)/2 # just get the diagonal of the matrix, originally n*(n+1)/2 from https://en.wikipedia.org/wiki/Summation
+        half_matrix = np.tril(distance_matrix_df)/elements  # better than summing everything and then dividing. Avoids inf from sum()
+        
+        # print(" hkd : " , np.isfinite(half_matrix).sum()  )
+        #print("HMTX:  " , half_matrix.sum() , " <-> " , half_matrix.sum(axis=1) , "  " , elements , " ==>  " , np.isfinite(half_matrix).sum() , " == " ,  distance_matrix_df.shape , " mn mx " , half_matrix.min() , " / " , half_matrix.max() )
         if(elements==0):
             return   0.0 # is just the distance of one to itself
-        sum = half_matrix.ravel().sum()/elements
+        sum = half_matrix.sum()
+        
         return sum
         # np.mean(half_matrix)
         
@@ -400,7 +417,7 @@ class SSMLKVForestPredictor(BaseEstimator, ClassifierMixin):
         
 
         #average_distance_time = time()
-
+        # print("dist matrix  " ,  df_labels_distances.loc[left_labels_index , left_labels_index ])
         left_cluster_label_distance = self.get_average_distance( df_labels_distances.loc[left_labels_index , left_labels_index ]  )
         right_cluster_label_distance = self.get_average_distance( df_labels_distances.loc[right_labels_index , right_labels_index ]  )
         distance_avg = (left_cluster_label_distance+right_cluster_label_distance)/2.0
@@ -443,8 +460,9 @@ class SSMLKVForestPredictor(BaseEstimator, ClassifierMixin):
         # actual_coeff = (1-attr_cluster_distance)*self.node_hyper_params["pD"] +  (1-distance_avg)*self.node_hyper_params["pA"] + (1-s_score)*self.node_hyper_params["pB"] +  (c_score)*self.node_hyper_params["pC"] # c_score is already 
         actual_coeff = (1-distance_avg)*self.node_hyper_params["pA"] + supervised_imbalance*self.node_hyper_params["pB"] +  (sup_unsup_ratio_balance)*self.node_hyper_params["pC"] + (c_score)*self.node_hyper_params["pD"] +(s_score)*self.node_hyper_params["pE"]  + correlation_data*self.node_hyper_params["pF"] + (1-attr_cluster_distance)*self.node_hyper_params["pG"]
         
-        #print(" checking values " , supervised_imbalance," ",left_sup_unsup_ratio," ",right_sup_unsup_ratio," ",sup_unsup_ratio_balance, " > ", actual_coeff )
-        
+        #print(" checking values 1" , supervised_imbalance," ",left_sup_unsup_ratio," ",right_sup_unsup_ratio," ",sup_unsup_ratio_balance, " > ", actual_coeff )
+        #print(" checking values 2" , distance_avg," ",c_score," ",s_score," ",correlation_data, " "  , attr_cluster_distance ,  " > ", actual_coeff )
+        # print(" checking values : " ,  left_cluster_label_distance  , " " , right_cluster_label_distance , "  " , len(left_labels_index) , "    "  ,  len(right_labels_index)  )
         return left_labels_index,right_labels_index,actual_coeff,left_cluster,right_cluster,sscluster,actual_coeff,correlation_data
 
     # , tree , tree_id , instances, labels  ---> previously
@@ -525,7 +543,12 @@ class SSMLKVForestPredictor(BaseEstimator, ClassifierMixin):
         max_iterations = self.node_hyper_params["m_iterations"]
         iteration = 0
         
-        min_supervised_per_leaf = 2 # new nodes have to have more that this amount 
+
+        if( "min_supervised_per_leaf" in self.node_hyper_params ):
+            min_supervised_per_leaf = self.node_hyper_params["min_supervised_per_leaf"] # new nodes have to have more that this amount 
+        else:
+            min_supervised_per_leaf = 2 # new nodes have to have more that this amount 
+            
         left_supervised_objects = min_supervised_per_leaf
         right_supervised_objects = min_supervised_per_leaf
         
@@ -578,7 +601,7 @@ class SSMLKVForestPredictor(BaseEstimator, ClassifierMixin):
             # print(f"---------------------- +++++++++++++ {tree_id} {actual_coeff}     {best_partition_coeff}" , flush=True)
                     
             if( actual_coeff > best_partition_coeff):
-                    #print(f"{tree_id} {actual_coeff}     {best_partition_coeff}      {supervised_imbalance}_ {sup_unsup_ratio_balance}       {attr_cluster_distance} {distance_avg} {1-s_score} {c_score} ")
+                    #print(f"{tree_id} {actual_coeff}     {best_partition_coeff}      {left_supervised_objects}_ {right_supervised_objects}       {columns_to_select} ")
                     
                     # we need to make sure that the partition will be fit enough after the iteration
                     left_supervised_objects = len(left_labels_index)
@@ -965,12 +988,62 @@ class SSMLKVForestPredictor(BaseEstimator, ClassifierMixin):
             pb.update(1)
         return structure
     
+    def import_model(self, parameters=None, dataset=None, nodes=None, categoryMap=[], folder=""):
+        self.node_hyper_params = parameters
+        print(self.node_hyper_params)
+        self.instances = dataset
+        self.categoryMap = categoryMap
+
+        self.trees = []
+
+        labels = []
+        for cn in nodes.columns:
+            if( cn.find("model_") >= 0 ):
+                labels.append(1)
+
+        self.labels = np.array(labels).reshape( (1,-1) ) # just needed for making space for predictions. 
+        
+
+        for tree_i in range(0, parameters['trees_quantity'] ):
+            tree = DecisionTree()
+            root_id = nodes[ (nodes["is_root"])&(nodes["tree_id"] == tree_i) ]
+            root_node = DecisionTreeNodeV2(None, None, None,dataset=dataset, hyper_params_dict=parameters, tree_id = tree_i, level=0 )
+            tree.add_root_node(root_node)
+           
+            root_node.import_node(tree_id=tree_i, node_id = root_id["node_id"].values[0] , nodes = nodes, folder=folder, params=self.node_hyper_params )
+            self.trees.append(tree)
+
+        self.ready = True
+        
+
+    def save_model(self, export_folder):
+        node_list = []
+
+        for tree in self.trees:
+            print("ith Tree is" , tree.get_id() , " will be on " , export_folder )
+            
+            tree.root.export_node(node_list, True, export_folder=export_folder)
+
+            # print(node_list)
+
+        df = pd.DataFrame(node_list)
+        df.to_csv(export_folder + "/" + "nodes.csv")
+
+        print("******************** " , self.node_hyper_params)
+        df2 = pd.DataFrame(self.node_hyper_params)
+        df2.to_csv(export_folder + "/" + "hyperparams.csv")
+
+        df3 = pd.DataFrame(self.categoryMap)
+        df3.to_csv(export_folder + "/" + "categoryMap.csv")
+
+        self.instances.to_csv(export_folder + "/" + "dataset.csv")
+
     def predict(self, X, print_prediction_log=False):
         # check_is_fitted(self)
         pred, prob =  self.predict_with_proba(X,print_prediction_log)
         return pred
 
-    def predict_with_proba(self, X, print_prediction_log=False ,y_true = None, activations_list = None, explain_decisions = False, suffix=""):
+    def predict_with_proba(self, X, print_prediction_log=False ,y_true = None, activations_list = None, explain_decisions = False, labels_names = None):
         # check_is_fitted(self)
         #predictions = np.zeros(shape=[self.labels.shape[1]])
         #probabilities = np.zeros(shape=[self.labels.shape[1]])
@@ -1009,7 +1082,7 @@ class SSMLKVForestPredictor(BaseEstimator, ClassifierMixin):
                     rule_explain_dict = row.to_dict()
 
                 if y_true is not None:
-                    prd, prb = tree.root.predict_with_proba(row, original_labels=y_true[y_counter] , activations_list = activations_list, explain_decisions = explain_decisions, rule_explain_dict=rule_explain_dict)
+                    prd, prb = tree.root.predict_with_proba(row, original_labels=y_true[y_counter] , activations_list = activations_list, explain_decisions = explain_decisions, rule_explain_dict=rule_explain_dict, labels_names = labels_names )
                 else:
                     prd, prb = tree.root.predict_with_proba(row, original_labels=None, explain_decisions = explain_decisions, rule_explain_dict=rule_explain_dict)
                     
@@ -1045,7 +1118,7 @@ class SSMLKVForestPredictor(BaseEstimator, ClassifierMixin):
 
         if(explain_decisions):
             rdf = pd.DataFrame(rule_explanations)
-            rdf.to_csv(f"./results/explanations_{suffix}_.csv")
+            rdf.to_csv("explanations.csv")
     
         return np.where( np.array(predictions)>=0.5,1,0 ) , np.array(probabilities)
 

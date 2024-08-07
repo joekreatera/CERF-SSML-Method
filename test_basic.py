@@ -171,7 +171,8 @@ def train(cycles_to_do = 1, do_explain = False):
     'm_iterations':(int, 40,200),
     'bagging_pct':(float, 0.60, 0.90),
     'depth_limit': (int,0,10), # 4 and 20 originally, 0-16
-    "output_quality":False
+    "output_quality":False,
+    "min_supervised_per_leaf":2
     }
 
     final_list = []

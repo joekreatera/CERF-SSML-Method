@@ -560,6 +560,7 @@ def generate_explainable_datasets(rules_df, activations_df, labels_columns):
     df_count = grouped.count()["node_id"]
 
     df_macro_f1 = grouped.sum()
+    # print(df_macro_f1.columns)
     results_by_class_f1 =pd.DataFrame()
     results_by_class_p = pd.DataFrame()
     results_by_class_r = pd.DataFrame()

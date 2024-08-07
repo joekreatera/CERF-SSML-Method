@@ -17,17 +17,18 @@ def convert_dict(x):
     #print(d)
     return d
 
-def generate_explainability_files(rules_df, labels_distrib,  labels_distrib_supervised, trees_qty, suffix="") :
+def generate_explainability_files(rules_df, labels_distrib = None,  labels_distrib_supervised = None, trees_qty = 1) :
 
     
     plp = rules_df[ rules_df["is_leaf"] == True]
     np_plp = numpy.array(plp["pred_label_probs"].values)
     np_avg = np_plp.mean(axis=0)
 
-    labels_distribution_df = pd.DataFrame( [ labels_distrib.values , labels_distrib_supervised.values , np_avg ] , index=["all_labels","supervised_labels","model_labels"] )
-    print(labels_distribution_df) 
+    if(labels_distrib is None and labels_distrib_supervised is None):
+        labels_distribution_df = pd.DataFrame( [ labels_distrib.values , labels_distrib_supervised.values , np_avg ] , index=["all_labels","supervised_labels","model_labels"] )
+        print(labels_distribution_df) 
 
-    rules_df.to_csv(f"./results/rules_{suffix}.csv")
+    rules_df.to_csv("rules.csv")
 
     leafs_df = rules_df[ rules_df["is_leaf"] == True ] 
     leafs_df.reset_index(inplace=True)
@@ -64,7 +65,7 @@ def generate_explainability_files(rules_df, labels_distrib,  labels_distrib_supe
     
     plt.title('Label Distribution Plot')
     plt.yticks([])
-    plt.savefig(f"./results/label_distribution_plot_{suffix}.png")
+    plt.savefig("label_distribution_plot.png")
     plt.close()
 
 
@@ -99,7 +100,11 @@ def generate_explainability_files(rules_df, labels_distrib,  labels_distrib_supe
         
     axes = fig.axes
 
-    axes[0].set_xticks( [i for i in range(0,len(cols_dict))], labels=[f"col_{i}" for i in range(0,len(cols_dict))] , rotation='vertical')
-
-    plt.savefig(f"./results/attribute_distribution_plot_{suffix}.png")
+    #print(limits)
+    #print(A.items())
+    #print(axes)
+    #print(cols_dict)
+    if( len(cols_dict) > 0 ):
+        axes[0].set_xticks( [i for i in range(0,len(cols_dict))], labels=[f"col_{i}" for i in range(0,len(cols_dict))] , rotation='vertical')
+        plt.savefig("attribute_distribution_plot.png")
     plt.close()

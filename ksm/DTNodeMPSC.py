@@ -264,6 +264,84 @@ class DecisionTreeNodeV2:
         
         rules_list.append(structure)
 
+
+    def import_node(self, tree_id= 0, node_id = 0, nodes = None, folder="", params = None):
+        self.id = node_id
+        self.tree_id = tree_id
+        self.hyper_params_dict = params
+        #print("NODE ID , TREE_ID " , node_id , " // " , tree_id)
+        if(nodes is not None):
+            node_info = nodes[ (nodes["tree_id"] == tree_id) & (nodes["node_id"] == node_id)  ]
+
+            self.is_leaf =   not (node_info["decision_columns"].astype(str).values[0]  != "nan")   
+            #print(f"IS LEAF??? decision for {node_id} on {tree_id}", self.is_leaf , "   based : "  , node_info["decision_columns"].astype(str).values[0] ) 
+            self.instance_index = pd.Index(eval(node_info["instance_index"].values[0] ))
+
+            label_names = []
+
+            for cn in nodes.columns:
+                if( cn.find("model_") >= 0 ):
+                    label_names.append( cn.replace("model_","") )
+
+            self.labels = pd.DataFrame(columns=label_names)
+            # print(self.labels)
+
+            # now build the model!
+            if( self.is_leaf ):
+                self.model = SSLearnerLeaf(hyper_params_dict=self.hyper_params_dict)
+                # generate sslearnerleaf build model for the label specific models loading
+                self.model.import_model(node_info)
+                # print(f"model built for {node_id} on {tree_id}")
+            else:
+                self.decision_columns = eval( node_info["decision_columns"].astype(str).values[0] )
+                self.left = DecisionTreeNodeV2(self, None, None,dataset=self.dataset, hyper_params_dict=self.hyper_params_dict, tree_id = tree_id, level=self.level+1 )
+                self.left.import_node(tree_id=tree_id, node_id = node_info["left_id"].values[0] , nodes = nodes, folder=folder, params = params )
+                
+                self.right = DecisionTreeNodeV2(self, None, None,dataset=self.dataset, hyper_params_dict=self.hyper_params_dict, tree_id = tree_id, level=self.level+1 )
+                self.right.import_node(tree_id=tree_id, node_id = node_info["right_id"].values[0] , nodes = nodes, folder=folder , params=params )
+                
+           
+            
+            #print(node_info.info())
+            #print(self.instance_index )
+
+
+        return 
+
+    def export_node(self,  nodes_list, is_root = False, export_folder=""):
+        
+        n = None
+        n = dict()
+        n["is_root"] = is_root
+        n["instance_index"] = self.instance_index.to_list()
+        n["decision_columns"] = self.decision_columns
+        n["node_id"] = self.id
+        n["tree_id"] = self.tree_id
+            
+        # print(" node " , self.id , "  " , self.is_leaf )
+        if( self.is_leaf ):
+            n["is_leaf"] = True    
+            nodes_list.append( n  )
+            n["output_features"] = self.model.output_features_
+            models_exported = self.model.export_model(export_folder,self.tree_id,self.id)
+            
+            t = 0
+            for label,me in zip(self.labels.columns, models_exported):
+                n[f"model_{label}"] = me
+                n[f'threshold_{label}'] = self.model.thresholds[t]
+                t += 1           
+        else:
+            n["is_leaf"] = True
+
+            n["left_id"] = self.left.id
+            n["right_id"] = self.right.id
+            
+            self.left.export_node(nodes_list , export_folder = export_folder)
+            self.right.export_node(nodes_list,  export_folder = export_folder)
+            nodes_list.append( n  )
+            
+
+
     def get_structure(self, true_y_df):
         structure = {"left":None, "right":None}
 
@@ -285,36 +363,7 @@ class DecisionTreeNodeV2:
         
         return structure
 
-        distance_matrix = pairwise_distances( true_y_df.loc[self.instance_index.array].to_numpy(), metric='cosine')
-        this_avg = 0
-        half_matrix = np.tril(distance_matrix)
-        n = distance_matrix.shape[0] - 1 # n its the amount of elements, n-1 would take out the distances of one to itself
-        elements = n*(n+1)/2 # just get the diagonal of the matrix, originally n*(n+1)/2 from https://en.wikipedia.org/wiki/Summation
-        if(elements==0):
-            this_avg= 0.0 # is just the distance of one to itself
-        else:
-            this_avg = half_matrix.ravel().sum()/elements
-    
-        structure["label_inner_distance"] = this_avg
-
-        # all the features here
-        cat_feats = self.node_hyper_params["categorical_dictionary"].get_categorical_features( self.dataset.columns, arr_name_based=True )
-        # this one is not tested yet. 
-        distance_matrix = pairwise_distances( self.dataset.loc[self.instance_index.array].to_numpy(), metric='gower', cat_features=cat_feats)
-        this_avg = 0
-        half_matrix = np.tril(distance_matrix)
-        n = distance_matrix.shape[0] - 1 # n its the amount of elements, n-1 would take out the distances of one to itself
-        elements = n*(n+1)/2 # just get the diagonal of the matrix, originally n*(n+1)/2 from https://en.wikipedia.org/wiki/Summation
-        if(elements==0):
-            this_avg= 0.0 # is just the distance of one to itself
-        else:
-            this_avg = half_matrix.ravel().sum()/elements
-    
-        structure["gower_inner_distance"] = this_avg
-
-        return structure
-
-    def predict_with_proba(self, row, original_labels=None, activations_list = None, explain_decisions = False, rule_explain_dict = None ):
+    def predict_with_proba(self, row, original_labels=None, activations_list = None, explain_decisions = False, rule_explain_dict = None, labels_names=None ):
         #print(row)
         
         val = None 
@@ -331,9 +380,12 @@ class DecisionTreeNodeV2:
         #print(val)
         
         if( self.is_leaf ):
+            # print( row.name , " arrived  to " , self.tree_id , " --> " , self.id )
             r = np.array([row.to_numpy()])
             pred, prob = self.model.predict_with_proba(r, self.global_labels_distribution)
-
+            
+            # print( row.name , " arrived  to " , self.tree_id , " --> " , self.id , " prob" , prob )
+            
             if(explain_decisions):
                 step = len(rule_explain_dict) - row.shape[0]
                 #rule_explain_dict[f"step_{step+1}"] = f"[{self.tree_id}_{self.id}] model_decision:{pred}({prob})"
@@ -352,28 +404,31 @@ class DecisionTreeNodeV2:
                     activation[f"label_{counter}_pred"] = lpd
                     activation[f"label_{counter}_prob"] = lpr
                     activation[f"label_{counter}_real"] = original_labels[counter]
-                    if( lpd ==  original_labels[counter] ):
+                    
+                    label_title = f'label_{counter}' if labels_names is None else f'{labels_names[counter]}'
+                    
+                    if( lpd ==  original_labels[counter] ):    
                         if( lpd == 1):
-                            activation[f"label_{counter}_tp"] = 1
-                            activation[f"label_{counter}_tn"] = 0
-                            activation[f"label_{counter}_fp"] = 0
-                            activation[f"label_{counter}_fn"] = 0
+                            activation[f"{label_title}_tp"] = 1
+                            activation[f"{label_title}_tn"] = 0
+                            activation[f"{label_title}_fp"] = 0
+                            activation[f"{label_title}_fn"] = 0
                         if( lpd == 0):
-                            activation[f"label_{counter}_tp"] = 0
-                            activation[f"label_{counter}_tn"] = 1
-                            activation[f"label_{counter}_fp"] = 0
-                            activation[f"label_{counter}_fn"] = 0
+                            activation[f"{label_title}_tp"] = 0
+                            activation[f"{label_title}_tn"] = 1
+                            activation[f"{label_title}_fp"] = 0
+                            activation[f"{label_title}_fn"] = 0
                     if( lpd !=  original_labels[counter] ):
                         if( lpd == 1):
-                            activation[f"label_{counter}_tp"] = 0
-                            activation[f"label_{counter}_tn"] = 0
-                            activation[f"label_{counter}_fp"] = 1
-                            activation[f"label_{counter}_fn"] = 0
+                            activation[f"{label_title}_tp"] = 0
+                            activation[f"{label_title}_tn"] = 0
+                            activation[f"{label_title}_fp"] = 1
+                            activation[f"{label_title}_fn"] = 0
                         if( lpd == 0):
-                            activation[f"label_{counter}_tp"] = 0
-                            activation[f"label_{counter}_tn"] = 0
-                            activation[f"label_{counter}_fp"] = 0
-                            activation[f"label_{counter}_fn"] = 1      
+                            activation[f"{label_title}_tp"] = 0
+                            activation[f"{label_title}_tn"] = 0
+                            activation[f"{label_title}_fp"] = 0
+                            activation[f"{label_title}_fn"] = 1      
                     counter += 1
                 
                 activations_list.append(activation)
@@ -411,7 +466,11 @@ class DecisionTreeNodeV2:
         # check what happens with numpy trying top get max of strings
         # we should change any np nans to 0. 
         # the total min and total max homologate the distances on the gower. Just used when the gower is on. 
-        cat_feats = self.hyper_params_dict["categorical_dictionary"].get_categorical_features( self.decision_columns, arr_name_based=True )
+
+        if( "loaded_categorical_dictionary" in self.hyper_params_dict ):
+            cat_feats = self.hyper_params_dict["loaded_categorical_dictionary"]
+        else:
+            cat_feats = self.hyper_params_dict["categorical_dictionary"].get_categorical_features( self.decision_columns, arr_name_based=True )
 
         left_distances = pairwise_distances(  val.to_numpy().reshape(1,-1) , left_side ,metric=self.hyper_params_dict['distance_function'] , min_max_array = [total_min,total_max] , cat_features=cat_feats )
         right_distances = pairwise_distances(  val.to_numpy().reshape(1,-1) , right_side,metric=self.hyper_params_dict['distance_function'] , min_max_array =  [total_min,total_max]  , cat_features=cat_feats )
@@ -492,4 +551,6 @@ class DecisionTree:
         return self.root.decide(row)
     def read_tree(self, file):
         print("when reading file rebuild tree to classify")
+    def get_id(self):
+        return self.root.tree_id
     
