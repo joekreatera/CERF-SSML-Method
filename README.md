@@ -55,3 +55,8 @@ To use the explainability feature, apply the method with 1 parameter combination
 ```
 python ./test_basic.py 1 explain
 ```
+
+To test categorical columns, in particular with the Flags dataset
+```
+python ./test_categorical.py 1
+```
