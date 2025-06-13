@@ -489,6 +489,7 @@ def pairwise_distances(X,Y=None,metric='euclidean', min_max_array = None, cat_fe
     Cat features should be the set of column numbers with categorical data, only available for gower.
 
     """
+    
     if(metric=='euclidean'):
         return euclidean_distances(X,Y=Y,squared=False)
         #if(Y is None): # scipy is not faster
@@ -513,6 +514,7 @@ def pairwise_distances(X,Y=None,metric='euclidean', min_max_array = None, cat_fe
             
         if( X.shape[0] == 1 ):
             try:
+                
                 mat = numba_gower.gower_distance_vector_to_matrix(X,Y, cat_cols=cats, mn=mn, mx=mx )
 
                 if(enable_signatures):
@@ -530,6 +532,10 @@ def pairwise_distances(X,Y=None,metric='euclidean', min_max_array = None, cat_fe
                 print(min_max_array , "  " , type(min_max_array) )
                 raise e    
         else:
+            #print("+_______")
+            #print(cats)
+            #print(X.shape)
+            #print(X)
             mat =  numba_gower.gower_distance_matrix(X, cat_cols=cats, mn=mn, mx=mx ) # min_max_array=min_max_array
             #print("***************   "  , numba_signatures)
             #print("--------------- " , numba_gower.gower_distance_matrix.signatures)

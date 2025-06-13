@@ -84,7 +84,7 @@ def gower_distance_matrix(X,cat_cols , mn=None, mx = None):
     return dm
 
 
-@njit(fastmath=True, debug=True, error_model='numpy') # error model comes from avoid implicit branching on divisions!
+@njit(fastmath=True, debug=False, error_model='numpy') # error model comes from avoid implicit branching on divisions!
 def gower_distance_vector_to_matrix(x , X,cat_cols , mn=None, mx = None):
     """
     Returns the distance from x to each X not including the distance from x to itself, which is 0. 

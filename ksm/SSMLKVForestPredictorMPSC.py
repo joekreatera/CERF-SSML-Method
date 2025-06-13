@@ -269,12 +269,14 @@ class SSMLKVForestPredictor(BaseEstimator, ClassifierMixin):
         # 0 is the same, 1 is the farthest
         n = distance_matrix_df.shape[0] - 1 # n its the amount of elements, n-1 would take out the distances of one to itself
         elements = n*(n+1)/2 # just get the diagonal of the matrix, originally n*(n+1)/2 from https://en.wikipedia.org/wiki/Summation
+        
+        if(elements==0):
+            return   0.0 # is just the distance of one to itself
         half_matrix = np.tril(distance_matrix_df)/elements  # better than summing everything and then dividing. Avoids inf from sum()
         
         # print(" hkd : " , np.isfinite(half_matrix).sum()  )
         #print("HMTX:  " , half_matrix.sum() , " <-> " , half_matrix.sum(axis=1) , "  " , elements , " ==>  " , np.isfinite(half_matrix).sum() , " == " ,  distance_matrix_df.shape , " mn mx " , half_matrix.min() , " / " , half_matrix.max() )
-        if(elements==0):
-            return   0.0 # is just the distance of one to itself
+        
         sum = half_matrix.sum()
         
         return sum
@@ -364,6 +366,7 @@ class SSMLKVForestPredictor(BaseEstimator, ClassifierMixin):
 
         
         # cat_feats = self.node_hyper_params["categorical_dictionary"].get_categorical_features( [1,25,68] )
+        # print("selected cols " , selected_cols )
         cat_feats = self.node_hyper_params["categorical_dictionary"].get_categorical_features( selected_cols, arr_name_based=True )
         f_distance_matrix = pairwise_distances( instances[ selected_cols ].to_numpy(),metric=self.node_hyper_params['distance_function'], cat_features=cat_feats)
         
@@ -1057,8 +1060,8 @@ class SSMLKVForestPredictor(BaseEstimator, ClassifierMixin):
         
         for col in X.items():
             if col[0] in self.categoryMap:
-                X[col[0]] = X[col[0]].map( self.categoryMap[col[0]] )
-            
+                ONECOL = X[col[0]].map( self.categoryMap[col[0]] )
+                X.loc[:,col[0]] = ONECOL
         #print("Check numba signatures...")
         #print_numba_signatures()
 
